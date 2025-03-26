@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
@@ -21,7 +21,6 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { toast } from "react-toastify";
 import { useAmbassadorStore } from "@/lib/store/ambassador-store";
 
 const formSchema = z.object({
@@ -46,13 +45,14 @@ export function AddModalForm({
   const {
     inviteUser,
     banks,
-    isLoading,
     verifyAccount,
     accountName,
     getBanks,
     selectBank,
     selectedBank,
     getAmbassadors,
+    set,
+    isBankLoading,
   } = useAmbassadorStore();
 
   const {
@@ -77,8 +77,8 @@ export function AddModalForm({
   });
 
   // Watch bankCode and accountNumber for auto-verification
-  const bankCode = watch("bank_code");
-  const accountNumber = watch("account_number");
+  // const bankCode = watch("bank_code");
+  // const accountNumber = watch("account_number");
 
   useEffect(() => {
     const fetchBanks = async () => {
@@ -92,17 +92,38 @@ export function AddModalForm({
     fetchBanks();
   }, [getBanks]);
 
-  // Auto fill account name when bak and account are filled
-
-  useEffect(() => {
-    if (bankCode && accountNumber.length === 10) {
-      verifyAccount(bankCode, accountNumber);
+  // In your component
+  const handleAccountVerification = useCallback(async () => {
+    if (selectedBank?.code && watch("account_number")) {
+      try {
+        await verifyAccount(selectedBank.code, watch("account_number"));
+      } catch (error) {
+        console.error(error);
+        // Optional: Additional error handling if needed
+        setValue("account_number", "");
+      }
     }
-  }, [bankCode, accountNumber, verifyAccount]);
+  }, [selectedBank, verifyAccount, watch, setValue]);
+
+  // Use this effect to trigger verification
+  useEffect(() => {
+    if (selectedBank?.code && watch("account_number")?.length === 10) {
+      handleAccountVerification();
+    }
+  }, [selectedBank, handleAccountVerification, watch]);
 
   useEffect(() => {
     setValue("account_name", accountName, { shouldValidate: true });
   }, [accountName, setValue]);
+
+  const handleReset = () => {
+    reset();
+
+    set({
+      accountName: "",
+      selectedBank: null,
+    });
+  };
 
   const onSubmit = async (data: FormValues) => {
     try {
@@ -115,22 +136,22 @@ export function AddModalForm({
         data.account_name as string,
         data.bank_code
       );
-      toast.success("User added successfully!");
 
       await getAmbassadors();
-      reset();
+      handleReset();
     } catch (error) {
       console.error(error);
-      toast.error("Failed to invite user");
     }
   };
 
   // Filter unique banks
   const uniqueBanks = useMemo(() => {
-    return banks?.filter(
-      (bank, index, self) =>
-        index === self.findIndex((b) => b.code === bank.code)
-    );
+    return banks?.length
+      ? banks.filter(
+          (bank, index, self) =>
+            index === self.findIndex((b) => b.code === bank.code)
+        )
+      : [];
   }, [banks]);
 
   return (
@@ -153,7 +174,12 @@ export function AddModalForm({
             <p className="text-sm mt-1.5">Add Ambassador.</p>
 
             <Button
-              disabled={isSubmitting || !accountName}
+              disabled={
+                isSubmitting ||
+                !accountName ||
+                !watch("bank_code") ||
+                !watch("account_number")
+              }
               className="text-sm font-semibold h-9 rounded-[8px] mt-5 w-[129px] flex justify-center items-center"
               type="submit"
             >
@@ -255,7 +281,7 @@ export function AddModalForm({
                   <SelectValue placeholder="Select a bank" />
                 </SelectTrigger>
                 <SelectContent>
-                  {isLoading ? (
+                  {isBankLoading ? (
                     <SelectItem disabled value={"loading"}>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin cursor-not-allowed" />
                     </SelectItem>

@@ -8,6 +8,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { ambassadorApi } from "../api/ambassador-api";
 import type { AxiosError } from "axios";
 import { ApiError } from "../api/auth-api";
+import { toast } from "react-toastify";
 
 interface AmbassadorState {
   ambassadors: Ambassador[];
@@ -16,11 +17,14 @@ interface AmbassadorState {
   selectedBank: Bank | null;
   accountName: string;
   isLoading: boolean;
+  isBankLoading: boolean;
+  isAccountVerificationLoading: boolean;
   isAmbassadorLoading: boolean;
   error: string | null;
   currentPage: number;
   itemsPerPage: number;
   selectedAmbassador: Ambassador | null;
+  set: (state: Partial<AmbassadorState>) => void;
 
   // Actions
   getAmbassadors: () => Promise<void>;
@@ -40,7 +44,7 @@ interface AmbassadorState {
     accountNumber: string,
     accountName: string,
     bankCode: string
-  ) => Promise<void>;
+  ) => Promise<unknown>;
 }
 
 export const useAmbassadorStore = create<AmbassadorState>()(
@@ -52,11 +56,15 @@ export const useAmbassadorStore = create<AmbassadorState>()(
       selectedBank: null,
       accountName: "",
       isLoading: false,
+      isBankLoading: false,
+      isAccountVerificationLoading: false,
       isAmbassadorLoading: false,
       error: null,
       currentPage: 1,
       itemsPerPage: 10,
       selectedAmbassador: null,
+      set,
+
       getAmbassadors: async () => {
         try {
           set({ isAmbassadorLoading: true, error: null });
@@ -98,17 +106,17 @@ export const useAmbassadorStore = create<AmbassadorState>()(
       },
       getBanks: async () => {
         try {
-          set({ isLoading: true, error: null });
+          set({ isBankLoading: true, error: null });
           const response = await ambassadorApi.getBanks();
 
           set({
             banks: response.data.list,
-            isLoading: false,
+            isBankLoading: false,
           });
         } catch (error) {
           const axiosError = error as AxiosError<ApiError>;
           const errorMessage = axiosError.response?.data?.message;
-          set({ isLoading: false, error: errorMessage });
+          set({ isBankLoading: false, error: errorMessage });
         }
       },
 
@@ -116,7 +124,7 @@ export const useAmbassadorStore = create<AmbassadorState>()(
 
       verifyAccount: async (bankCode, accountNumber) => {
         try {
-          set({ isLoading: true, error: null });
+          set({ isAccountVerificationLoading: true, error: null });
           const response = await ambassadorApi.verifyAccount(
             bankCode,
             accountNumber
@@ -124,12 +132,12 @@ export const useAmbassadorStore = create<AmbassadorState>()(
 
           set({
             accountName: response.data.account_name,
-            isLoading: false,
+            isAccountVerificationLoading: false,
           });
         } catch (error) {
           const axiosError = error as AxiosError<ApiError>;
           const errorMessage = axiosError.response?.data?.message;
-          set({ isLoading: false, error: errorMessage });
+          set({ isAccountVerificationLoading: false, error: errorMessage });
         }
       },
 
@@ -144,7 +152,7 @@ export const useAmbassadorStore = create<AmbassadorState>()(
       ) => {
         set({ isLoading: true, error: null });
         try {
-          await ambassadorApi.inviteUser(
+          const response = await ambassadorApi.inviteUser(
             phoneNumber,
             email,
             firstName,
@@ -153,11 +161,32 @@ export const useAmbassadorStore = create<AmbassadorState>()(
             accountName,
             bankCode
           );
+
           set({ isLoading: false, error: null });
+          toast.success("User added successfully!");
+          return response;
         } catch (error) {
           const axiosError = error as AxiosError<ApiError>;
-          const errorMessage = axiosError.response?.data?.message;
-          set({ isLoading: false, error: errorMessage });
+          if (axiosError.response?.data) {
+            const responseData = axiosError.response.data;
+            const message =
+              typeof responseData === "object" &&
+              responseData.message !== null &&
+              "message" in responseData
+                ? responseData.message
+                : "An unexpected error occured";
+
+            set({ isLoading: false, error: message });
+            toast.error(message);
+            throw error;
+          } else {
+            set({ isLoading: false, error: "Network error occurred" });
+            toast.error("Network error occurred");
+
+            throw error;
+          }
+        } finally {
+          set({ isLoading: false });
         }
       },
 

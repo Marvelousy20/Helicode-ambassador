@@ -7,6 +7,9 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  validateStatus: (status) => {
+    return status < 400;
+  },
 });
 
 // Add request interceptor to attach auth token
